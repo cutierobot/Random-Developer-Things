@@ -34,6 +34,64 @@ check_has_commits() {
 }
 
 
+release_notes_fields() {
+  local work_item=$1
+
+
+  getResponse=$(curl -X GET \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Basic $authHeader" \
+    https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/$work_item?api-version=7.2-preview.3)
+
+  branch_type=$(echo "$getResponse" | jq -r '.fields."System.WorkItemType"' | awk '{print tolower($0)}')
+
+  if [ "$branch_type" == "user story" ];then
+    echo ""
+    echo "Added/Enhanced/Updated [feature or capability] to [purpose/value]"
+    echo ""
+    while [[ -z "$release_title" ]]; do 
+      read -p "Release Title: " release_title 
+    done
+    echo ""
+    echo "Implemented [what was built or changed] to [solve what problem or support what need]. This allows/enables [impact or benefit]."
+    echo ""
+    while [[ -z "$release_summary" ]]; do 
+      read -p "Release Summary: " release_summary 
+    done
+  fi
+
+  if [ "$branch_type" == "bug" ];then
+    echo ""
+    echo "Fixed an issue where [what was happening] in [area/feature] causing [impact]. This has been corrected and is now working as expected."
+    echo ""
+    while [[ -z "$release_title" ]]; do 
+      read -p "Release Title: " release_title 
+    done
+
+    release_summary="" # not needed for Bugs
+  fi
+  
+
+  # Add Release Notes, escaping only the variable. Custom fields.
+  curl -X PATCH \
+    -H "Content-Type: application/json-patch+json" \
+    -H "Authorization: Basic $authHeader" \
+    -d '[
+      {
+        "op": "add",
+        "path": "/fields/Custom.ReleaseTitle",
+        "value": "'"$release_title"'"
+      },
+      {
+        "op": "add",
+        "path": "/fields/Custom.ReleaseSummary",
+        "value": "'"$release_summary"'"
+      },
+    ]' \
+    https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/$WORK_ITEM?api-version=7.0
+}
+
+
 # 1. create PR for SQL ⚙️
 # 2. get pull request 1d form SQL to add to coldfusion PR
 # 3. create coldfusion PR 
@@ -124,6 +182,8 @@ if [ "$REPO_TYPE" == "db" ];then
       ]
     }' \
     https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repositoryId}/pullrequests?api-version=7.1-preview.1)
+
+    release_notes_fields "$WORK_ITEM"
 elif [ "$REPO_TYPE" == "portal" ];then
   cd <Local_git_folder_location>
   NEW_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -160,7 +220,7 @@ elif [ "$REPO_TYPE" == "portal" ];then
     ]
   }' \
   https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repositoryId}/pullrequests?api-version=7.1-preview.1)
-
+  release_notes_fields "$WORK_ITEM"
 elif [ "$REPO_TYPE" == "api" ];then
   cd <local_git_folder_location>
   NEW_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -197,6 +257,7 @@ elif [ "$REPO_TYPE" == "api" ];then
     ]
   }' \
   https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repositoryId}/pullrequests?api-version=7.1-preview.1)
+  release_notes_fields "$WORK_ITEM"
 else
   cd <local_git_folder_location>
   NEW_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -233,6 +294,7 @@ else
     ]
   }' \
   https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repositoryId}/pullrequests?api-version=7.1-preview.1)
+  release_notes_fields "$WORK_ITEM"
 fi
 
 
